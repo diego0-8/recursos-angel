@@ -1,0 +1,148 @@
+/* =============================================
+   Estilos de Login - Recursos Humanos
+   ============================================= */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #1e3c72 100%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 420px;
+    padding: 20px;
+}
+
+.login-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    padding: 50px 40px;
+    backdrop-filter: blur(10px);
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.login-header .icon-circle {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    box-shadow: 0 10px 30px rgba(30, 60, 114, 0.4);
+}
+
+.login-header .icon-circle i {
+    font-size: 36px;
+    color: white;
+}
+
+.login-header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    color: #1e3c72;
+    margin-bottom: 8px;
+}
+
+.login-header p {
+    color: #6c757d;
+    font-size: 14px;
+}
+
+.form-floating {
+    margin-bottom: 20px;
+}
+
+.form-floating .form-control {
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    height: 58px;
+    padding: 1rem 1rem 1rem 3rem;
+    font-size: 15px;
+    transition: all 0.3s ease;
+}
+
+.form-floating .form-control:focus {
+    border-color: #2a5298;
+    box-shadow: 0 0 0 4px rgba(42, 82, 152, 0.1);
+}
+
+.form-floating label {
+    padding-left: 3rem;
+    color: #6c757d;
+}
+
+.input-icon {
+    position: absolute;
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #6c757d;
+    font-size: 18px;
+    z-index: 5;
+}
+
+.form-floating:focus-within .input-icon {
+    color: #2a5298;
+}
+
+.btn-login {
+    width: 100%;
+    padding: 15px;
+    border: none;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: white;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+}
+
+.btn-login:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 30px rgba(30, 60, 114, 0.4);
+    background: linear-gradient(135deg, #2a5298, #1e3c72);
+}
+
+.btn-login:active {
+    transform: translateY(0);
+}
+
+.alert {
+    border-radius: 12px;
+    border: none;
+    padding: 15px 20px;
+    margin-bottom: 25px;
+    font-size: 14px;
+}
+
+.alert-danger {
+    background-color: #fee2e2;
+    color: #dc2626;
+}
+
+.footer-text {
+    text-align: center;
+    margin-top: 30px;
+    color: #6c757d;
+    font-size: 13px;
+}
+

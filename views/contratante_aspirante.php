@@ -42,6 +42,12 @@
             color: var(--dark-color);
             font-weight: 600;
         }
+
+        /* Scroll cómodo dentro del modal de contratación */
+        .modal-dialog.modal-xl.modal-dialog-scrollable .modal-body {
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -234,11 +240,16 @@
                                                        class="btn btn-sm btn-info" title="Ver perfil completo">
                                                         <i class="bi bi-person-badge"></i> Perfil
                                                     </a>
-                                                    <a href="index.php?action=contratante_aspirante_accion&aspirante_id=<?php echo $aspirante['id']; ?>&accion=contratado" 
-                                                       class="btn btn-sm btn-success" title="Marcar como contratado"
-                                                       onclick="return confirm('¿Está seguro de marcar este aspirante como contratado?');">
+                                                    <button type="button"
+                                                            class="btn btn-sm btn-success btn-abrir-modal-contratar"
+                                                            title="Marcar como contratado"
+                                                            data-bs-toggle="modal"
+                                                            data-bs-target="#modalContratarAspirante"
+                                                            data-aspirante-id="<?php echo $aspirante['id']; ?>"
+                                                            data-aspirante-nombre="<?php echo htmlspecialchars($aspirante['nombre']); ?>"
+                                                            data-aspirante-cedula="<?php echo htmlspecialchars($aspirante['cedula']); ?>">
                                                         <i class="bi bi-check-circle"></i> Contratado
-                                                    </a>
+                                                    </button>
                                                     <a href="index.php?action=contratante_aspirante_accion&aspirante_id=<?php echo $aspirante['id']; ?>&accion=rechazado" 
                                                        class="btn btn-sm btn-danger" title="Desvincular aspirante"
                                                        onclick="return confirm('¿Está seguro de desvincular este aspirante?');">
@@ -267,7 +278,290 @@
         </div>
     </div>
     
+    <!-- Modal para contratar aspirante (datos adicionales de empleado) -->
+    <div class="modal fade" id="modalContratarAspirante" tabindex="-1" aria-labelledby="modalContratarAspiranteLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <form method="POST" action="index.php?action=contratante_aspirante_contratar" enctype="multipart/form-data" id="formContratarAspirante">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="modalContratarAspiranteLabel">Completar datos para contratar aspirante</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="aspirante_id" id="aspirante_id_modal">
+                        <div class="alert alert-info mb-4" id="resumenAspiranteModal" style="display:none;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <span id="textoResumenAspirante"></span>
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Fecha de nacimiento<span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" name="fecha_nacimiento" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Barrio<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="barrio" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Localidad<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="localidad" required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Salario a pagar (COP)<span class="text-danger">*</span></label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" 
+                                           class="form-control campo-cop" 
+                                           name="salario" 
+                                           inputmode="numeric" 
+                                           autocomplete="off"
+                                           placeholder="Ej: 1.300.000"
+                                           required>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Subsidio de transporte (COP)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">$</span>
+                                    <input type="text" 
+                                           class="form-control campo-cop" 
+                                           name="subsidio_transporte" 
+                                           inputmode="numeric" 
+                                           autocomplete="off"
+                                           placeholder="Ej: 162.000">
+                                </div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">EPS<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="eps" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Fondo de pensión<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="fondo_pension" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Fondo de cesantías<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="fondo_cesantias" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Caja de compensación<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="caja_compensacion" required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Género<span class="text-danger">*</span></label>
+                                <select class="form-select" name="genero" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="femenino">Femenino</option>
+                                    <option value="masculino">Masculino</option>
+                                    <option value="no_binario">No binario</option>
+                                    <option value="otro">Otro</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">RH<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="rh" placeholder="Ej: O+, A-, etc." required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Nivel de escolaridad<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="nivel_escolaridad" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Estado de escolaridad<span class="text-danger">*</span></label>
+                                <select class="form-select" name="nivel_escolaridad_estado" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="en_progreso">En progreso</option>
+                                    <option value="certificado">Certificado</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Estado civil<span class="text-danger">*</span></label>
+                                <select class="form-select" name="estado_civil" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="soltero">Soltero(a)</option>
+                                    <option value="casado">Casado(a)</option>
+                                    <option value="union_libre">Unión libre</option>
+                                    <option value="viudo">Viudo(a)</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">¿Cuenta con computador?<span class="text-danger">*</span></label>
+                                <select class="form-select" name="computador" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="si">Sí</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">¿Cuenta con internet?<span class="text-danger">*</span></label>
+                                <select class="form-select" name="internet" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="si">Sí</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">¿Tiene hijos?<span class="text-danger">*</span></label>
+                                <select class="form-select" name="tiene_hijos" id="tiene_hijos_select" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="si">Sí</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4" id="grupo_numero_hijos" style="display:none;">
+                                <label class="form-label">Número de hijos<span class="text-danger">*</span></label>
+                                <input type="number" min="1" class="form-control" name="numero_hijos" id="numero_hijos_input">
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">Nombre y apellidos contacto de emergencia<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="contacto_emergencia_nombre" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Parentesco contacto de emergencia<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="contacto_emergencia_parentesco" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Número de contacto de emergencia<span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="contacto_emergencia_telefono" required>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">¿Exámenes médicos ocupacionales?<span class="text-danger">*</span></label>
+                                <select class="form-select" name="examenes_medicos" id="examenes_medicos_select" required>
+                                    <option value="">Seleccionar...</option>
+                                    <option value="si">Sí</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4" id="grupo_fecha_examenes" style="display:none;">
+                                <label class="form-label">Fecha de exámenes médicos<span class="text-danger">*</span></label>
+                                <input type="date" class="form-control" name="examenes_fecha" id="examenes_fecha_input">
+                            </div>
+                            <div class="col-md-4" id="grupo_pdf_examenes" style="display:none;">
+                                <label class="form-label">Resultados exámenes médicos (PDF)<span class="text-danger">*</span></label>
+                                <input type="file" class="form-control" name="examenes_pdf" id="examenes_pdf_input" accept="application/pdf">
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Observaciones (opcional)</label>
+                                <textarea class="form-control" name="observaciones" rows="3"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar datos y contratar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            var modalEl = document.getElementById('modalContratarAspirante');
+            if (modalEl) {
+                modalEl.addEventListener('show.bs.modal', function (event) {
+                    var button = event.relatedTarget;
+                    if (!button) return;
+                    var aspiranteId = button.getAttribute('data-aspirante-id');
+                    var aspiranteNombre = button.getAttribute('data-aspirante-nombre');
+                    var aspiranteCedula = button.getAttribute('data-aspirante-cedula');
+
+                    document.getElementById('aspirante_id_modal').value = aspiranteId;
+
+                    var textoResumen = document.getElementById('textoResumenAspirante');
+                    var resumenWrapper = document.getElementById('resumenAspiranteModal');
+                    if (textoResumen && resumenWrapper) {
+                        textoResumen.textContent = 'Está contratando a ' + aspiranteNombre + ' (Cédula: ' + aspiranteCedula + '). Complete los siguientes datos obligatorios.';
+                        resumenWrapper.style.display = 'block';
+                    }
+                });
+            }
+
+            var tieneHijosSelect = document.getElementById('tiene_hijos_select');
+            var grupoNumeroHijos = document.getElementById('grupo_numero_hijos');
+            var numeroHijosInput = document.getElementById('numero_hijos_input');
+            if (tieneHijosSelect && grupoNumeroHijos && numeroHijosInput) {
+                tieneHijosSelect.addEventListener('change', function () {
+                    if (this.value === 'si') {
+                        grupoNumeroHijos.style.display = 'block';
+                        numeroHijosInput.setAttribute('required', 'required');
+                    } else {
+                        grupoNumeroHijos.style.display = 'none';
+                        numeroHijosInput.removeAttribute('required');
+                        numeroHijosInput.value = '';
+                    }
+                });
+            }
+
+            var examenesSelect = document.getElementById('examenes_medicos_select');
+            var grupoFechaExamenes = document.getElementById('grupo_fecha_examenes');
+            var grupoPdfExamenes = document.getElementById('grupo_pdf_examenes');
+            var examenesFechaInput = document.getElementById('examenes_fecha_input');
+            var examenesPdfInput = document.getElementById('examenes_pdf_input');
+            if (examenesSelect && grupoFechaExamenes && grupoPdfExamenes) {
+                examenesSelect.addEventListener('change', function () {
+                    if (this.value === 'si') {
+                        grupoFechaExamenes.style.display = 'block';
+                        grupoPdfExamenes.style.display = 'block';
+                        if (examenesFechaInput) examenesFechaInput.setAttribute('required', 'required');
+                        if (examenesPdfInput) examenesPdfInput.setAttribute('required', 'required');
+                    } else {
+                        grupoFechaExamenes.style.display = 'none';
+                        grupoPdfExamenes.style.display = 'none';
+                        if (examenesFechaInput) {
+                            examenesFechaInput.removeAttribute('required');
+                            examenesFechaInput.value = '';
+                        }
+                        if (examenesPdfInput) {
+                            examenesPdfInput.removeAttribute('required');
+                            examenesPdfInput.value = '';
+                        }
+                    }
+                });
+            }
+
+            // Formateo simple de campos en pesos colombianos (solo miles, sin decimales)
+            function formatearCOP(valor) {
+                valor = valor.replace(/[^\d]/g, '');
+                if (!valor) return '';
+                return valor.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+            }
+
+            document.querySelectorAll('.campo-cop').forEach(function (input) {
+                input.addEventListener('input', function () {
+                    var cursorPos = this.selectionStart;
+                    var largoAntes = this.value.length;
+                    this.value = formatearCOP(this.value);
+                    var largoDespues = this.value.length;
+                    this.selectionEnd = cursorPos + (largoDespues - largoAntes);
+                });
+            });
+
+            // Antes de enviar el formulario, limpiar formato COP a números puros
+            var formContratar = document.getElementById('formContratarAspirante');
+            if (formContratar) {
+                formContratar.addEventListener('submit', function () {
+                    document.querySelectorAll('.campo-cop').forEach(function (input) {
+                        if (input.value) {
+                            // remover puntos de miles, dejar solo dígitos
+                            input.value = input.value.replace(/[^\d]/g, '');
+                        }
+                    });
+                });
+            }
+        });
+    </script>
 </body>
 </html>
 

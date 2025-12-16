@@ -123,11 +123,52 @@
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h3 class="mb-0">Empleados de <?php echo htmlspecialchars($empresa_seleccionada['nombre']); ?></h3>
-                            <p class="text-muted mb-0">Total: <?php echo count($empleados); ?> empleado(s)</p>
+                            <p class="text-muted mb-0">Total: <?php echo $total_empleados ?? count($empleados); ?> empleado(s)</p>
                         </div>
-                        <a href="index.php?action=contratante_empleados" class="btn btn-outline-secondary">
-                            <i class="bi bi-arrow-left me-2"></i>Volver a Empresas
-                        </a>
+                        <div class="d-flex gap-2">
+                            <a href="index.php?action=contratante_documentos_empleados&empresa_id=<?php echo $empresa_seleccionada['id']; ?>" 
+                               class="btn btn-primary">
+                                <i class="bi bi-file-earmark-text me-2"></i>Documentos
+                            </a>
+                            <a href="index.php?action=contratante_empleados" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-2"></i>Volver a Empresas
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Buscador -->
+                    <div class="card-custom mb-3">
+                        <div class="card-body">
+                            <form method="GET" action="index.php" class="row g-3 align-items-end">
+                                <input type="hidden" name="action" value="contratante_empleados">
+                                <input type="hidden" name="empresa_id" value="<?php echo $empresa_seleccionada['id']; ?>">
+                                <div class="col-md-8">
+                                    <label for="buscar" class="form-label">Buscar por nombre o cédula</label>
+                                    <input type="text" 
+                                           class="form-control" 
+                                           id="buscar" 
+                                           name="buscar" 
+                                           value="<?php echo htmlspecialchars($buscar ?? ''); ?>" 
+                                           placeholder="Ingrese nombre o cédula del empleado">
+                                </div>
+                                <div class="col-md-4">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-search me-2"></i>Buscar
+                                    </button>
+                                </div>
+                                <?php if (!empty($buscar)): ?>
+                                <div class="col-12">
+                                    <a href="index.php?action=contratante_empleados&empresa_id=<?php echo $empresa_seleccionada['id']; ?>" 
+                                       class="btn btn-sm btn-outline-secondary">
+                                        <i class="bi bi-x-circle me-1"></i>Limpiar búsqueda
+                                    </a>
+                                    <small class="text-muted ms-2">
+                                        Mostrando resultados para: <strong><?php echo htmlspecialchars($buscar); ?></strong>
+                                    </small>
+                                </div>
+                                <?php endif; ?>
+                            </form>
+                        </div>
                     </div>
                 </div>
                 
@@ -166,15 +207,32 @@
                                                     </span>
                                                 </td>
                                                 <td>
-                                                    <span class="badge bg-info">
-                                                        <?php echo $empleado['total_documentos'] ?? 0; ?> documento(s)
-                                                    </span>
+                                                    <?php 
+                                                    $totalDocs = (int)($empleado['total_documentos'] ?? 0);
+                                                    if ($totalDocs > 0): 
+                                                    ?>
+                                                        <span class="badge bg-success">
+                                                            <i class="bi bi-file-earmark-check me-1"></i><?php echo $totalDocs; ?> documento(s)
+                                                        </span>
+                                                    <?php else: ?>
+                                                        <span class="badge bg-secondary">
+                                                            <i class="bi bi-file-earmark me-1"></i>0 documentos
+                                                        </span>
+                                                    <?php endif; ?>
                                                 </td>
                                                 <td>
                                                     <?php if (!empty($empleado['ultimo_contrato_fecha'])): ?>
-                                                        <?php echo date('d/m/Y', strtotime($empleado['ultimo_contrato_fecha'])); ?>
+                                                        <span class="text-primary">
+                                                            <i class="bi bi-calendar-check me-1"></i><?php echo date('d/m/Y', strtotime($empleado['ultimo_contrato_fecha'])); ?>
+                                                        </span>
+                                                        <br>
+                                                        <small class="text-muted">
+                                                            <i class="bi bi-clock me-1"></i><?php echo date('H:i', strtotime($empleado['ultimo_contrato_fecha'])); ?>
+                                                        </small>
                                                     <?php else: ?>
-                                                        <span class="text-muted">N/A</span>
+                                                        <span class="text-muted">
+                                                            <i class="bi bi-dash-circle me-1"></i>Sin contratos firmados
+                                                        </span>
                                                     <?php endif; ?>
                                                 </td>
                                                 <td>
@@ -182,6 +240,10 @@
                                                         <a href="index.php?action=contratante_perfil_empleado&empleado_cedula=<?php echo $empleado['cedula']; ?>&empresa_id=<?php echo $empresa_seleccionada['id']; ?>" 
                                                            class="btn btn-sm btn-info" title="Ver perfil completo">
                                                             <i class="bi bi-person-badge"></i> Perfil
+                                                        </a>
+                                                        <a href="index.php?action=contratante_documentos_empleados&empresa_id=<?php echo $empresa_seleccionada['id']; ?>" 
+                                                           class="btn btn-sm btn-primary" title="Ver documentos disponibles">
+                                                            <i class="bi bi-file-earmark-text"></i> Documentos
                                                         </a>
                                                     </div>
                                                 </td>
@@ -192,9 +254,128 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Paginación -->
+                    <?php if (($total_paginas ?? 0) > 1): ?>
+                    <nav aria-label="Paginación de empleados">
+                        <ul class="pagination justify-content-center">
+                            <?php
+                            $paramsBase = [
+                                'action' => 'contratante_empleados',
+                                'empresa_id' => $empresa_seleccionada['id']
+                            ];
+                            if (!empty($buscar)) {
+                                $paramsBase['buscar'] = $buscar;
+                            }
+                            
+                            // Botón Anterior
+                            if (($pagina_actual ?? 1) > 1):
+                                $paramsAnterior = $paramsBase;
+                                $paramsAnterior['page'] = $pagina_actual - 1;
+                                $urlAnterior = 'index.php?' . http_build_query($paramsAnterior);
+                            ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="<?php echo $urlAnterior; ?>">
+                                        <i class="bi bi-chevron-left"></i> Anterior
+                                    </a>
+                                </li>
+                            <?php else: ?>
+                                <li class="page-item disabled">
+                                    <span class="page-link">
+                                        <i class="bi bi-chevron-left"></i> Anterior
+                                    </span>
+                                </li>
+                            <?php endif; ?>
+                            
+                            <?php
+                            // Mostrar números de página
+                            $pagina_actual = $pagina_actual ?? 1;
+                            $total_paginas = $total_paginas ?? 1;
+                            $inicio = max(1, $pagina_actual - 2);
+                            $fin = min($total_paginas, $pagina_actual + 2);
+                            
+                            if ($inicio > 1):
+                                $paramsPrimera = $paramsBase;
+                                $paramsPrimera['page'] = 1;
+                                $urlPrimera = 'index.php?' . http_build_query($paramsPrimera);
+                            ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="<?php echo $urlPrimera; ?>">1</a>
+                                </li>
+                                <?php if ($inicio > 2): ?>
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                <?php endif; ?>
+                            <?php endif; ?>
+                            
+                            <?php for ($i = $inicio; $i <= $fin; $i++): ?>
+                                <?php
+                                $paramsPagina = $paramsBase;
+                                $paramsPagina['page'] = $i;
+                                $urlPagina = 'index.php?' . http_build_query($paramsPagina);
+                                ?>
+                                <li class="page-item <?php echo $i == $pagina_actual ? 'active' : ''; ?>">
+                                    <a class="page-link" href="<?php echo $urlPagina; ?>">
+                                        <?php echo $i; ?>
+                                    </a>
+                                </li>
+                            <?php endfor; ?>
+                            
+                            <?php
+                            if ($fin < $total_paginas):
+                                $paramsUltima = $paramsBase;
+                                $paramsUltima['page'] = $total_paginas;
+                                $urlUltima = 'index.php?' . http_build_query($paramsUltima);
+                            ?>
+                                <?php if ($fin < $total_paginas - 1): ?>
+                                    <li class="page-item disabled">
+                                        <span class="page-link">...</span>
+                                    </li>
+                                <?php endif; ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="<?php echo $urlUltima; ?>">
+                                        <?php echo $total_paginas; ?>
+                                    </a>
+                                </li>
+                            <?php endif; ?>
+                            
+                            <!-- Botón Siguiente -->
+                            <?php if ($pagina_actual < $total_paginas): ?>
+                                <?php
+                                $paramsSiguiente = $paramsBase;
+                                $paramsSiguiente['page'] = $pagina_actual + 1;
+                                $urlSiguiente = 'index.php?' . http_build_query($paramsSiguiente);
+                                ?>
+                                <li class="page-item">
+                                    <a class="page-link" href="<?php echo $urlSiguiente; ?>">
+                                        Siguiente <i class="bi bi-chevron-right"></i>
+                                    </a>
+                                </li>
+                            <?php else: ?>
+                                <li class="page-item disabled">
+                                    <span class="page-link">
+                                        Siguiente <i class="bi bi-chevron-right"></i>
+                                    </span>
+                                </li>
+                            <?php endif; ?>
+                        </ul>
+                        <div class="text-center text-muted mt-2">
+                            <small>
+                                Página <?php echo $pagina_actual; ?> de <?php echo $total_paginas; ?> 
+                                (Mostrando <?php echo count($empleados); ?> de <?php echo $total_empleados; ?> empleados)
+                            </small>
+                        </div>
+                    </nav>
+                    <?php endif; ?>
                 <?php else: ?>
                     <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>No hay empleados registrados para esta empresa.
+                        <i class="bi bi-info-circle me-2"></i>
+                        <?php if (!empty($buscar)): ?>
+                            No se encontraron empleados que coincidan con la búsqueda: <strong><?php echo htmlspecialchars($buscar); ?></strong>
+                        <?php else: ?>
+                            No hay empleados registrados para esta empresa.
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
             <?php endif; ?>

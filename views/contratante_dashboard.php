@@ -83,9 +83,6 @@
                                 <a href="index.php?action=contratante_empleados" class="btn btn-info text-white">
                                     <i class="bi bi-people me-2"></i>Empleados
                                 </a>
-                                <a href="index.php?action=contratante_nuevo_contrato" class="btn btn-outline-primary">
-                                    <i class="bi bi-upload me-2"></i>Subir Nuevo Contrato
-                                </a>
                             </div>
                         </div>
                     </div>

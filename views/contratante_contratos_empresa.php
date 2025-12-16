@@ -54,6 +54,18 @@
             color: white;
             font-size: 1.5rem;
         }
+        .btn-filter-plantilla {
+            transition: all 0.3s ease;
+        }
+        .btn-filter-plantilla.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+        .btn-filter-plantilla:hover:not(.active) {
+            background-color: rgba(30, 60, 114, 0.1);
+            border-color: var(--primary-color);
+        }
     </style>
 </head>
 <body>
@@ -77,6 +89,21 @@
                     </nav>
                     <h1>Plantillas de Contratos - <?php echo htmlspecialchars($empresa['nombre']); ?></h1>
                     <p>Sube y gestiona las plantillas de contratos</p>
+                    
+                    <!-- Botones de Filtro por Tipo -->
+                    <?php 
+                    $tipoActual = isset($_GET['tipo']) ? $_GET['tipo'] : 'aspirantes';
+                    ?>
+                    <div class="d-flex gap-2 mt-3">
+                        <a href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&tipo=aspirantes" 
+                           class="btn btn-outline-primary btn-filter-plantilla <?php echo $tipoActual === 'aspirantes' ? 'active' : ''; ?>">
+                            <i class="bi bi-person-plus me-2"></i>Plantillas para Aspirantes
+                        </a>
+                        <a href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&tipo=empleados" 
+                           class="btn btn-outline-primary btn-filter-plantilla <?php echo $tipoActual === 'empleados' ? 'active' : ''; ?>">
+                            <i class="bi bi-people me-2"></i>Plantillas para Empleados
+                        </a>
+                    </div>
                 </div>
                 <div>
                     <a href="index.php?action=contratante_contratos" class="btn btn-outline-secondary me-2">
@@ -124,14 +151,14 @@
                                             <i class="bi bi-file-earmark-word"></i>
                                         </div>
                                         <div class="flex-grow-1">
-                                            <h6 class="mb-1"><?php echo basename($contrato['archivo_contrato']); ?></h6>
+                                            <h6 class="mb-1"><?php echo htmlspecialchars(basename($contrato['archivo_contrato'] ?? 'Sin nombre')); ?></h6>
                                             <small class="text-muted">
-                                                Subido: <?php echo date('d/m/Y H:i', strtotime($contrato['created_at'])); ?>
+                                                Subido: <?php echo isset($contrato['created_at']) ? date('d/m/Y H:i', strtotime($contrato['created_at'])) : 'N/A'; ?>
                                             </small>
                                         </div>
                                     </div>
                                     
-                                    <?php if ($contrato['datos_completos']): ?>
+                                    <?php if (!empty($contrato['datos_completos'])): ?>
                                         <span class="badge bg-success mb-3">
                                             <i class="bi bi-check-circle me-1"></i>Completado
                                         </span>
@@ -143,21 +170,27 @@
                                 </div>
                                 <div class="card-footer bg-white border-0 pt-0">
                                     <div class="d-flex gap-2">
+                                        <?php if (!empty($contrato['id'])): ?>
                                         <a href="index.php?action=contratante_llenar_contrato&id=<?php echo $contrato['id']; ?>&empresa_id=<?php echo $empresa['id']; ?>" 
                                            class="btn btn-sm btn-primary flex-grow-1">
                                             <i class="bi bi-pencil-square me-1"></i>Llenar Campos
                                         </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($contrato['archivo_contrato'])): ?>
                                         <a href="<?php echo htmlspecialchars($contrato['archivo_contrato']); ?>" 
                                            class="btn btn-sm btn-outline-secondary" download title="Descargar">
                                             <i class="bi bi-download"></i>
                                         </a>
+                                        <?php endif; ?>
+                                        <?php if (!empty($contrato['id'])): ?>
                                         <button type="button" class="btn btn-sm btn-outline-danger" 
                                                 onclick="confirmarEliminar(<?php echo $contrato['id']; ?>)" title="Eliminar">
                                             <i class="bi bi-trash"></i>
                                         </button>
+                                        <?php endif; ?>
                                     </div>
                                     
-                                    <?php if (!empty($contrato['archivo_generado'])): ?>
+                                    <?php if (!empty($contrato['archivo_generado']) && file_exists($contrato['archivo_generado'])): ?>
                                     <a href="<?php echo htmlspecialchars($contrato['archivo_generado']); ?>" 
                                        class="btn btn-sm btn-success w-100 mt-2" download>
                                         <i class="bi bi-file-earmark-check me-1"></i>Descargar Completado
@@ -186,19 +219,19 @@
             <nav class="mt-4">
                 <ul class="pagination justify-content-center">
                     <li class="page-item <?php echo $pagina_actual <= 1 ? 'disabled' : ''; ?>">
-                        <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&page=<?php echo $pagina_actual - 1; ?>">
+                        <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&tipo=<?php echo $tipoActual; ?>&page=<?php echo $pagina_actual - 1; ?>">
                             <i class="bi bi-chevron-left"></i>
                         </a>
                     </li>
                     <?php for ($i = 1; $i <= $total_paginas; $i++): ?>
                         <li class="page-item <?php echo $i === $pagina_actual ? 'active' : ''; ?>">
-                            <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&page=<?php echo $i; ?>">
+                            <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&tipo=<?php echo $tipoActual; ?>&page=<?php echo $i; ?>">
                                 <?php echo $i; ?>
                             </a>
                         </li>
                     <?php endfor; ?>
                     <li class="page-item <?php echo $pagina_actual >= $total_paginas ? 'disabled' : ''; ?>">
-                        <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&page=<?php echo $pagina_actual + 1; ?>">
+                        <a class="page-link" href="index.php?action=contratante_contratos_empresa&empresa_id=<?php echo $empresa['id']; ?>&tipo=<?php echo $tipoActual; ?>&page=<?php echo $pagina_actual + 1; ?>">
                             <i class="bi bi-chevron-right"></i>
                         </a>
                     </li>
@@ -221,6 +254,7 @@
                 <form id="formSubirPlantilla" method="POST" action="index.php?action=contratante_subir_plantilla" enctype="multipart/form-data">
                     <div class="modal-body">
                         <input type="hidden" name="empresa_id" value="<?php echo $empresa['id']; ?>">
+                        <input type="hidden" name="tipo_plantilla" id="tipo_plantilla_input" value="<?php echo $tipoActual === 'aspirantes' ? 'aspirante' : 'empleado'; ?>">
                         
                         <div class="upload-zone" id="uploadZone" onclick="document.getElementById('archivo_contrato').click()">
                             <i class="bi bi-cloud-arrow-up mb-3 d-block"></i>
@@ -309,6 +343,13 @@
             if (confirm('¿Está seguro de eliminar esta plantilla? Esta acción no se puede deshacer.')) {
                 window.location.href = 'index.php?action=contratante_eliminar_contrato&id=' + id + '&empresa_id=<?php echo $empresa['id']; ?>';
             }
+        }
+        
+        // Actualizar el tipo de plantilla en el formulario cuando cambia el filtro
+        const tipoPlantillaInput = document.getElementById('tipo_plantilla_input');
+        if (tipoPlantillaInput) {
+            const tipoActual = '<?php echo $tipoActual; ?>';
+            tipoPlantillaInput.value = tipoActual === 'aspirantes' ? 'aspirante' : 'empleado';
         }
     </script>
 </body>

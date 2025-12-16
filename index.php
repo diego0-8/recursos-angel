@@ -270,6 +270,26 @@ switch ($action) {
         
         include 'views/contratante_aspirante.php';
         break;
+
+    case 'contratante_aspirante_contratar':
+        $authController->requerirRol('contratante');
+        $usuario_actual = $authController->obtenerUsuarioActual();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: index.php?action=contratante_aspirante&error=Solicitud inválida');
+            exit();
+        }
+        
+        $contratanteController = new ContratanteController();
+        $resultado = $contratanteController->contratarAspiranteConDatos($_POST, $_FILES, $usuario_actual['cedula']);
+        
+        if ($resultado['success']) {
+            header('Location: index.php?action=contratante_aspirante&success=1');
+        } else {
+            header('Location: index.php?action=contratante_aspirante&error=' . urlencode($resultado['error']));
+        }
+        exit();
+        break;
         
     case 'contratante_aspirante_accion':
         $authController->requerirRol('contratante');
@@ -415,6 +435,14 @@ switch ($action) {
         
         $empresaId = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
         $pagina = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $tipoPlantilla = isset($_GET['tipo']) ? $_GET['tipo'] : 'aspirantes'; // Por defecto aspirantes
+        
+        // Convertir 'aspirantes' a 'aspirante' y 'empleados' a 'empleado'
+        if ($tipoPlantilla === 'aspirantes') {
+            $tipoPlantilla = 'aspirante';
+        } elseif ($tipoPlantilla === 'empleados') {
+            $tipoPlantilla = 'empleado';
+        }
         
         if (!$empresaId) {
             header('Location: index.php?action=contratante_contratos');
@@ -429,7 +457,7 @@ switch ($action) {
             exit();
         }
         
-        $resultado = $contratanteController->obtenerContratosPorEmpresa($usuario_actual['cedula'], $empresaId, $pagina);
+        $resultado = $contratanteController->obtenerContratosPorEmpresa($usuario_actual['cedula'], $empresaId, $pagina, $tipoPlantilla);
         $contratos = $resultado['contratos'];
         $total_contratos = $resultado['total'];
         $total_paginas = $resultado['total_paginas'];
@@ -448,12 +476,14 @@ switch ($action) {
             $contratanteController = new ContratanteController();
             $archivo = $_FILES['archivo_contrato'] ?? null;
             $empresaId = $_POST['empresa_id'] ?? 0;
-            $resultado = $contratanteController->subirPlantilla($empresaId, $archivo, $usuario_actual['cedula']);
+            $tipoPlantilla = $_POST['tipo_plantilla'] ?? 'empleado';
+            $resultado = $contratanteController->subirPlantilla($empresaId, $archivo, $usuario_actual['cedula'], $tipoPlantilla);
             
+            $tipoParam = $tipoPlantilla ? '&tipo=' . $tipoPlantilla : '';
             if ($resultado['success']) {
-                header('Location: index.php?action=contratante_contratos_empresa&empresa_id=' . $empresaId . '&success=' . $resultado['message']);
+                header('Location: index.php?action=contratante_contratos_empresa&empresa_id=' . $empresaId . $tipoParam . '&success=' . $resultado['message']);
             } else {
-                header('Location: index.php?action=contratante_contratos_empresa&empresa_id=' . $empresaId . '&error=' . urlencode($resultado['error']));
+                header('Location: index.php?action=contratante_contratos_empresa&empresa_id=' . $empresaId . $tipoParam . '&error=' . urlencode($resultado['error']));
             }
             exit();
         }
@@ -665,18 +695,27 @@ switch ($action) {
         $usuario_actual = $authController->obtenerUsuarioActual();
         
         $empresa_id = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        $pagina = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $buscar = isset($_GET['buscar']) ? trim($_GET['buscar']) : null;
         
         $contratanteController = new ContratanteController();
         $empresas = $contratanteController->obtenerEmpresas($usuario_actual['cedula']);
         
         $empresa_seleccionada = null;
         $empleados = [];
+        $total_empleados = 0;
+        $total_paginas = 0;
+        $pagina_actual = 1;
         
         if ($empresa_id) {
             $empresa_seleccionada = $contratanteController->obtenerEmpresa($empresa_id);
             
             if ($empresa_seleccionada) {
-                $empleados = $contratanteController->obtenerEmpleadosPorEmpresa($empresa_id, $usuario_actual['cedula']);
+                $resultado = $contratanteController->obtenerEmpleadosPorEmpresa($empresa_id, $usuario_actual['cedula'], $pagina, $buscar);
+                $empleados = $resultado['empleados'];
+                $total_empleados = $resultado['total'];
+                $total_paginas = $resultado['total_paginas'];
+                $pagina_actual = $resultado['pagina_actual'];
             } else {
                 header('Location: index.php?action=contratante_empleados&error=Empresa no encontrada');
                 exit();
@@ -684,6 +723,32 @@ switch ($action) {
         }
         
         include 'views/contratante_empleados.php';
+        break;
+        
+    case 'contratante_documentos_empleados':
+        $authController->requerirRol('contratante');
+        $usuario_actual = $authController->obtenerUsuarioActual();
+        
+        $empresa_id = isset($_GET['empresa_id']) ? (int)$_GET['empresa_id'] : 0;
+        
+        if (!$empresa_id) {
+            header('Location: index.php?action=contratante_empleados&error=Empresa no especificada');
+            exit();
+        }
+        
+        $contratanteController = new ContratanteController();
+        $empresa = $contratanteController->obtenerEmpresa($empresa_id);
+        
+        if (!$empresa) {
+            header('Location: index.php?action=contratante_empleados&error=Empresa no encontrada');
+            exit();
+        }
+        
+        // Obtener documentos de tipo 'empleado' para esta empresa
+        $resultado = $contratanteController->obtenerContratosPorEmpresa($usuario_actual['cedula'], $empresa_id, 1, 'empleado');
+        $documentos = $resultado['contratos'];
+        
+        include 'views/contratante_documentos_empleados.php';
         break;
         
     case 'contratante_perfil_empleado':
@@ -707,8 +772,51 @@ switch ($action) {
         }
         
         $empresa = $contratanteController->obtenerEmpresa($empresa_id);
+        // Asegurar que $empresa_id esté disponible en la vista
+        // (ya está definido arriba, pero lo mantenemos explícito)
+        // También asegurar que $empresa esté disponible
+        if (!$empresa) {
+            header('Location: index.php?action=contratante_empleados&empresa_id=' . $empresa_id . '&error=Empresa no encontrada');
+            exit();
+        }
         
         include 'views/contratante_perfil_empleado.php';
+        break;
+        
+    case 'contratante_actualizar_datos_personales':
+        $authController->requerirRol('contratante');
+        $usuario_actual = $authController->obtenerUsuarioActual();
+        
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            header('Location: index.php?action=contratante_empleados&error=Método no permitido');
+            exit();
+        }
+        
+        $aspirante_id = isset($_POST['aspirante_id']) ? (int)$_POST['aspirante_id'] : 0;
+        $empleado_cedula = isset($_POST['empleado_cedula']) ? (int)$_POST['empleado_cedula'] : 0;
+        $empresa_id = isset($_POST['empresa_id']) ? (int)$_POST['empresa_id'] : 0;
+        
+        if (!$aspirante_id || !$empleado_cedula || !$empresa_id) {
+            header('Location: index.php?action=contratante_perfil_empleado&empleado_cedula=' . $empleado_cedula . '&empresa_id=' . $empresa_id . '&error=Parámetros inválidos');
+            exit();
+        }
+        
+        $datos = [
+            'telefono' => isset($_POST['telefono']) ? trim($_POST['telefono']) : '',
+            'telefono2' => isset($_POST['telefono2']) ? trim($_POST['telefono2']) : '',
+            'correo' => isset($_POST['correo']) ? trim($_POST['correo']) : '',
+            'direccion' => isset($_POST['direccion']) ? trim($_POST['direccion']) : ''
+        ];
+        
+        $contratanteController = new ContratanteController();
+        $resultado = $contratanteController->actualizarDatosPersonales($aspirante_id, $datos, $usuario_actual['cedula']);
+        
+        if ($resultado['success']) {
+            header('Location: index.php?action=contratante_perfil_empleado&empleado_cedula=' . $empleado_cedula . '&empresa_id=' . $empresa_id . '&success=' . urlencode($resultado['message']));
+        } else {
+            header('Location: index.php?action=contratante_perfil_empleado&empleado_cedula=' . $empleado_cedula . '&empresa_id=' . $empresa_id . '&error=' . urlencode($resultado['error']));
+        }
+        exit();
         break;
         
     case 'contratante_perfil_aspirante':

@@ -124,9 +124,9 @@
                                         <div class="d-flex align-items-center">
                                             <i class="bi bi-file-earmark-word me-2"></i>
                                             <div>
-                                                <h6 class="mb-0"><?php echo htmlspecialchars(basename($contrato['archivo_contrato'])); ?></h6>
+                                                <h6 class="mb-0"><?php echo htmlspecialchars(basename($contrato['archivo_contrato'] ?? 'Sin nombre')); ?></h6>
                                                 <small class="text-muted">
-                                                    Subido: <?php echo date('d/m/Y H:i', strtotime($contrato['created_at'])); ?>
+                                                    Subido: <?php echo isset($contrato['created_at']) ? date('d/m/Y H:i', strtotime($contrato['created_at'])) : 'N/A'; ?>
                                                 </small>
                                             </div>
                                         </div>

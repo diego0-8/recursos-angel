@@ -211,15 +211,24 @@ class ContratanteController {
     /**
      * Obtener contratos por empresa del contratante
      */
-    public function obtenerContratosPorEmpresa($contratanteCedula, $empresaId, $pagina = 1) {
+    public function obtenerContratosPorEmpresa($contratanteCedula, $empresaId, $pagina = 1, $tipoPlantilla = null) {
         try {
             $offset = ($pagina - 1) * $this->porPagina;
             
+            // Construir WHERE con filtro de tipo
+            $where = "c.contratante_cedula = :cedula AND c.empresa_id = :empresa_id";
+            if ($tipoPlantilla && in_array($tipoPlantilla, ['aspirante', 'empleado'])) {
+                $where .= " AND c.tipo_plantilla = :tipo_plantilla";
+            }
+            
             // Contar total
-            $sqlCount = "SELECT COUNT(*) FROM contratos WHERE contratante_cedula = :cedula AND empresa_id = :empresa_id";
+            $sqlCount = "SELECT COUNT(*) FROM contratos c WHERE " . $where;
             $stmtCount = $this->db->prepare($sqlCount);
             $stmtCount->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmtCount->bindParam(':empresa_id', $empresaId, PDO::PARAM_INT);
+            if ($tipoPlantilla && in_array($tipoPlantilla, ['aspirante', 'empleado'])) {
+                $stmtCount->bindParam(':tipo_plantilla', $tipoPlantilla);
+            }
             $stmtCount->execute();
             $total = $stmtCount->fetchColumn();
             
@@ -227,13 +236,16 @@ class ContratanteController {
             $sql = "SELECT c.*, u.nombre as empleado_nombre
                     FROM contratos c
                     LEFT JOIN usuarios u ON c.empleado_cedula = u.cedula
-                    WHERE c.contratante_cedula = :cedula AND c.empresa_id = :empresa_id
+                    WHERE " . $where . "
                     ORDER BY c.created_at DESC
                     LIMIT :limit OFFSET :offset";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmt->bindParam(':empresa_id', $empresaId, PDO::PARAM_INT);
+            if ($tipoPlantilla && in_array($tipoPlantilla, ['aspirante', 'empleado'])) {
+                $stmt->bindParam(':tipo_plantilla', $tipoPlantilla);
+            }
             $stmt->bindValue(':limit', $this->porPagina, PDO::PARAM_INT);
             $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
@@ -274,7 +286,7 @@ class ContratanteController {
     /**
      * Subir plantilla de contrato (solo archivo .docx)
      */
-    public function subirPlantilla($empresaId, $archivo, $contratanteCedula) {
+    public function subirPlantilla($empresaId, $archivo, $contratanteCedula, $tipoPlantilla = 'empleado') {
         try {
             // Validar archivo
             if (!isset($archivo['tmp_name']) || empty($archivo['tmp_name']) || !is_uploaded_file($archivo['tmp_name'])) {
@@ -357,14 +369,20 @@ class ContratanteController {
                 return ['success' => false, 'error' => 'Empresa no encontrada'];
             }
             
+            // Validar tipo de plantilla
+            if (!in_array($tipoPlantilla, ['aspirante', 'empleado'])) {
+                $tipoPlantilla = 'empleado';
+            }
+            
             // Insertar registro (solo con empresa, contratante y archivo)
-            $sql = "INSERT INTO contratos (empresa_id, contratante_cedula, archivo_contrato, estado, fecha_firma)
-                    VALUES (:empresa_id, :contratante_cedula, :archivo, 'activo', CURDATE())";
+            $sql = "INSERT INTO contratos (empresa_id, contratante_cedula, archivo_contrato, tipo_plantilla, estado, fecha_firma)
+                    VALUES (:empresa_id, :contratante_cedula, :archivo, :tipo_plantilla, 'activo', CURDATE())";
             
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':empresa_id', $empresaId, PDO::PARAM_INT);
             $stmt->bindParam(':contratante_cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmt->bindParam(':archivo', $rutaArchivo);
+            $stmt->bindParam(':tipo_plantilla', $tipoPlantilla);
             
             if ($stmt->execute()) {
                 return ['success' => true, 'message' => 'created', 'id' => $this->db->lastInsertId()];
@@ -614,9 +632,9 @@ class ContratanteController {
         // Sanitizar campos
         $camposSanitizados = [];
         foreach ($campos as $nombre => $valor) {
-            // Sanitizar nombre del campo
+            // Sanitizar nombre del campo (permitir acentos, ñ y puntuación básica)
             $nombre = trim($nombre);
-            $nombre = preg_replace('/[^a-zA-Z0-9_\.\s\-]/', '', $nombre);
+            $nombre = preg_replace('/[^\p{L}\p{N}_\.\,\;\:\-\(\)\¿\?\¡\!\s]/u', '', $nombre);
             
             if (empty($nombre)) {
                 continue; // Saltar campos con nombres inválidos
@@ -823,6 +841,7 @@ class ContratanteController {
                     AND c.contratante_cedula = :cedula
                     AND c.archivo_contrato IS NOT NULL
                     AND c.archivo_contrato != ''
+                    AND (c.tipo_plantilla = 'aspirante' OR c.tipo_plantilla IS NULL)
                     ORDER BY c.created_at DESC";
             
             $stmt = $this->db->prepare($sql);
@@ -955,6 +974,196 @@ class ContratanteController {
         } catch (PDOException $e) {
             error_log("Error al cambiar estado del aspirante: " . $e->getMessage());
             return ['success' => false, 'error' => 'Error al cambiar el estado'];
+        }
+    }
+    
+    /**
+     * Contratar aspirante: guardar datos adicionales de empleado y cambiar estado
+     */
+    public function contratarAspiranteConDatos($datos, $archivos, $contratanteCedula) {
+        try {
+            $aspiranteId = isset($datos['aspirante_id']) ? (int)$datos['aspirante_id'] : 0;
+            if (!$aspiranteId) {
+                return ['success' => false, 'error' => 'Aspirante inválido'];
+            }
+
+            // Verificar que el aspirante pertenece a una empresa del contratante
+            $sql = "SELECT a.id, a.cedula 
+                    FROM aspirantes a
+                    INNER JOIN contratos c ON c.empresa_id = a.empresa_id
+                    WHERE a.id = :aspirante_id AND c.contratante_cedula = :cedula
+                    LIMIT 1";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':aspirante_id', $aspiranteId, PDO::PARAM_INT);
+            $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
+            $stmt->execute();
+            $aspirante = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$aspirante) {
+                return ['success' => false, 'error' => 'Aspirante no encontrado o no autorizado'];
+            }
+
+            $cedula = (int)$aspirante['cedula'];
+
+            // Subir archivo de exámenes médicos si viene
+            $rutaExamenesPdf = null;
+            if (isset($archivos['examenes_pdf']) && $archivos['examenes_pdf']['error'] === UPLOAD_ERR_OK) {
+                $tmpName = $archivos['examenes_pdf']['tmp_name'];
+                $nombreOriginal = $archivos['examenes_pdf']['name'];
+                $extension = strtolower(pathinfo($nombreOriginal, PATHINFO_EXTENSION));
+
+                if ($extension !== 'pdf') {
+                    return ['success' => false, 'error' => 'El archivo de exámenes médicos debe ser PDF'];
+                }
+
+                $dir = 'uploads/empleados_examenes/' . $cedula . '/';
+                if (!is_dir($dir)) {
+                    if (!mkdir($dir, 0775, true) && !is_dir($dir)) {
+                        return ['success' => false, 'error' => 'No se pudo crear el directorio para exámenes médicos'];
+                    }
+                }
+
+                $nombreSeguro = 'examenes_medicos_' . date('Ymd_His') . '.pdf';
+                $destino = $dir . $nombreSeguro;
+
+                if (!move_uploaded_file($tmpName, $destino)) {
+                    return ['success' => false, 'error' => 'No se pudo guardar el archivo de exámenes médicos'];
+                }
+
+                $rutaExamenesPdf = $destino;
+            }
+
+            // Normalizar montos de COP (el formulario envía solo dígitos sin puntos)
+            $salario = null;
+            if (isset($datos['salario']) && $datos['salario'] !== '') {
+                $salarioLimpio = preg_replace('/[^\d]/', '', (string)$datos['salario']);
+                $salario = $salarioLimpio !== '' ? (float)$salarioLimpio : null;
+            }
+
+            $subsidioTransporte = null;
+            if (isset($datos['subsidio_transporte']) && $datos['subsidio_transporte'] !== '') {
+                $subsidioLimpio = preg_replace('/[^\d]/', '', (string)$datos['subsidio_transporte']);
+                $subsidioTransporte = $subsidioLimpio !== '' ? (float)$subsidioLimpio : null;
+            }
+
+            // Normalizar valores booleanos
+            $computador = isset($datos['computador']) && $datos['computador'] === 'si' ? 1 : 0;
+            $internet = isset($datos['internet']) && $datos['internet'] === 'si' ? 1 : 0;
+            $tieneHijos = isset($datos['tiene_hijos']) && $datos['tiene_hijos'] === 'si' ? 1 : 0;
+            $examenesMedicos = isset($datos['examenes_medicos']) && $datos['examenes_medicos'] === 'si' ? 1 : 0;
+
+            $sql = "INSERT INTO empleado_datos (
+                        aspirante_id, cedula, fecha_nacimiento, barrio, localidad, salario, subsidio_transporte,
+                        eps, fondo_pension, fondo_cesantias, caja_compensacion, genero, rh,
+                        nivel_escolaridad, nivel_escolaridad_estado, estado_civil,
+                        computador, internet, tiene_hijos, numero_hijos,
+                        contacto_emergencia_nombre, contacto_emergencia_parentesco, contacto_emergencia_telefono,
+                        examenes_medicos, examenes_fecha, examenes_resultados_pdf, observaciones
+                    ) VALUES (
+                        :aspirante_id, :cedula, :fecha_nacimiento, :barrio, :localidad, :salario, :subsidio_transporte,
+                        :eps, :fondo_pension, :fondo_cesantias, :caja_compensacion, :genero, :rh,
+                        :nivel_escolaridad, :nivel_escolaridad_estado, :estado_civil,
+                        :computador, :internet, :tiene_hijos, :numero_hijos,
+                        :contacto_emergencia_nombre, :contacto_emergencia_parentesco, :contacto_emergencia_telefono,
+                        :examenes_medicos, :examenes_fecha, :examenes_resultados_pdf, :observaciones
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        fecha_nacimiento = VALUES(fecha_nacimiento),
+                        barrio = VALUES(barrio),
+                        localidad = VALUES(localidad),
+                        salario = VALUES(salario),
+                        subsidio_transporte = VALUES(subsidio_transporte),
+                        eps = VALUES(eps),
+                        fondo_pension = VALUES(fondo_pension),
+                        fondo_cesantias = VALUES(fondo_cesantias),
+                        caja_compensacion = VALUES(caja_compensacion),
+                        genero = VALUES(genero),
+                        rh = VALUES(rh),
+                        nivel_escolaridad = VALUES(nivel_escolaridad),
+                        nivel_escolaridad_estado = VALUES(nivel_escolaridad_estado),
+                        estado_civil = VALUES(estado_civil),
+                        computador = VALUES(computador),
+                        internet = VALUES(internet),
+                        tiene_hijos = VALUES(tiene_hijos),
+                        numero_hijos = VALUES(numero_hijos),
+                        contacto_emergencia_nombre = VALUES(contacto_emergencia_nombre),
+                        contacto_emergencia_parentesco = VALUES(contacto_emergencia_parentesco),
+                        contacto_emergencia_telefono = VALUES(contacto_emergencia_telefono),
+                        examenes_medicos = VALUES(examenes_medicos),
+                        examenes_fecha = VALUES(examenes_fecha),
+                        examenes_resultados_pdf = IFNULL(VALUES(examenes_resultados_pdf), examenes_resultados_pdf),
+                        observaciones = VALUES(observaciones)";
+
+            $stmt = $this->db->prepare($sql);
+            if (!$stmt) {
+                // Si falla el prepare (por ejemplo, tabla inexistente), evitar fatal error y registrar detalle
+                $errorInfo = $this->db->errorInfo();
+                error_log('Error al preparar INSERT en empleado_datos: ' . implode(' | ', $errorInfo));
+                return ['success' => false, 'error' => 'Error interno al preparar el guardado de datos del empleado'];
+            }
+
+            $fechaNacimiento = $datos['fecha_nacimiento'] ?? null;
+            $barrio = $datos['barrio'] ?? null;
+            $localidad = $datos['localidad'] ?? null;
+            $epsVal = $datos['eps'] ?? null;
+            $fondoPension = $datos['fondo_pension'] ?? null;
+            $fondoCesantias = $datos['fondo_cesantias'] ?? null;
+            $cajaCompensacion = $datos['caja_compensacion'] ?? null;
+            $genero = $datos['genero'] ?? null;
+            $rh = $datos['rh'] ?? null;
+            $nivelEscolaridad = $datos['nivel_escolaridad'] ?? null;
+            $nivelEscolaridadEstado = $datos['nivel_escolaridad_estado'] ?? null;
+            $estadoCivil = $datos['estado_civil'] ?? null;
+            $numeroHijos = $tieneHijos ? (int)($datos['numero_hijos'] ?? 0) : 0;
+            $contactoNombre = $datos['contacto_emergencia_nombre'] ?? null;
+            $contactoParentesco = $datos['contacto_emergencia_parentesco'] ?? null;
+            $contactoTelefono = $datos['contacto_emergencia_telefono'] ?? null;
+            $examenesFecha = $datos['examenes_fecha'] ?? null;
+            $observaciones = $datos['observaciones'] ?? null;
+
+            $stmt->bindParam(':aspirante_id', $aspiranteId, PDO::PARAM_INT);
+            $stmt->bindParam(':cedula', $cedula, PDO::PARAM_INT);
+            $stmt->bindParam(':fecha_nacimiento', $fechaNacimiento);
+            $stmt->bindParam(':barrio', $barrio);
+            $stmt->bindParam(':localidad', $localidad);
+            $stmt->bindParam(':salario', $salario);
+            $stmt->bindParam(':subsidio_transporte', $subsidioTransporte);
+            $stmt->bindParam(':eps', $epsVal);
+            $stmt->bindParam(':fondo_pension', $fondoPension);
+            $stmt->bindParam(':fondo_cesantias', $fondoCesantias);
+            $stmt->bindParam(':caja_compensacion', $cajaCompensacion);
+            $stmt->bindParam(':genero', $genero);
+            $stmt->bindParam(':rh', $rh);
+            $stmt->bindParam(':nivel_escolaridad', $nivelEscolaridad);
+            $stmt->bindParam(':nivel_escolaridad_estado', $nivelEscolaridadEstado);
+            $stmt->bindParam(':estado_civil', $estadoCivil);
+            $stmt->bindParam(':computador', $computador, PDO::PARAM_INT);
+            $stmt->bindParam(':internet', $internet, PDO::PARAM_INT);
+            $stmt->bindParam(':tiene_hijos', $tieneHijos, PDO::PARAM_INT);
+            $stmt->bindParam(':numero_hijos', $numeroHijos, PDO::PARAM_INT);
+            $stmt->bindParam(':contacto_emergencia_nombre', $contactoNombre);
+            $stmt->bindParam(':contacto_emergencia_parentesco', $contactoParentesco);
+            $stmt->bindParam(':contacto_emergencia_telefono', $contactoTelefono);
+            $stmt->bindParam(':examenes_medicos', $examenesMedicos, PDO::PARAM_INT);
+            $stmt->bindParam(':examenes_fecha', $examenesFecha);
+            $stmt->bindParam(':examenes_resultados_pdf', $rutaExamenesPdf);
+            $stmt->bindParam(':observaciones', $observaciones);
+
+            if (!$stmt->execute()) {
+                return ['success' => false, 'error' => 'No se pudieron guardar los datos del empleado'];
+            }
+
+            // Finalmente, cambiar estado a contratado (esto también actualiza el rol a empleado)
+            $resultadoCambio = $this->cambiarEstadoAspirante($aspiranteId, 'contratado', $contratanteCedula);
+            if (!$resultadoCambio['success']) {
+                return $resultadoCambio;
+            }
+
+            return ['success' => true, 'message' => 'Aspirante contratado correctamente'];
+        } catch (Throwable $e) {
+            error_log("Error al contratar aspirante con datos: " . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
+            // En entorno de desarrollo mostramos el mensaje real para poder depurar
+            return ['success' => false, 'error' => 'Error al contratar el aspirante: ' . $e->getMessage()];
         }
     }
     
@@ -1230,33 +1439,89 @@ class ContratanteController {
     /**
      * Obtener empleados de una empresa específica del contratante
      * Incluye empleados que fueron aspirantes contratados, incluso si no tienen documentos generados aún
+     * @param int $empresaId ID de la empresa
+     * @param int $contratanteCedula Cédula del contratante
+     * @param int $pagina Número de página (por defecto 1)
+     * @param string|null $buscar Término de búsqueda (nombre o cédula)
+     * @return array Array con empleados, total, total_paginas y pagina_actual
      */
-    public function obtenerEmpleadosPorEmpresa($empresaId, $contratanteCedula) {
+    public function obtenerEmpleadosPorEmpresa($empresaId, $contratanteCedula, $pagina = 1, $buscar = null) {
         try {
+            $porPagina = 10;
+            $offset = ($pagina - 1) * $porPagina;
+            
+            // Construir condición de búsqueda
+            $condicionBusqueda = '';
+            if (!empty($buscar)) {
+                $buscarLimpio = trim($buscar);
+                $condicionBusqueda = " AND (u.nombre LIKE :buscar OR u.cedula LIKE :buscar)";
+            }
+            
             // Primero, obtener empleados que tienen contratos (con o sin archivo_generado)
+            // Incluir también documentos que llenaron cuando eran aspirantes
             $sql = "SELECT DISTINCT u.cedula, u.nombre, u.estado,
-                    (SELECT COUNT(*) FROM contratos c 
-                     WHERE c.empleado_cedula = u.cedula 
-                     AND c.empresa_id = :empresa_id 
-                     AND c.contratante_cedula = :cedula
-                     AND c.archivo_generado IS NOT NULL 
-                     AND c.archivo_generado != '') as total_documentos,
-                    (SELECT MAX(c.fecha_firma) FROM contratos c 
-                     WHERE c.empleado_cedula = u.cedula 
-                     AND c.empresa_id = :empresa_id 
-                     AND c.contratante_cedula = :cedula) as ultimo_contrato_fecha
+                    (
+                        SELECT COUNT(DISTINCT c.id) FROM contratos c 
+                        WHERE (
+                            (c.empleado_cedula = u.cedula 
+                             AND c.empresa_id = :empresa_id 
+                             AND c.contratante_cedula = :cedula)
+                            OR 
+                            (EXISTS (
+                                SELECT 1 FROM aspirante_contratos ac 
+                                INNER JOIN aspirantes a ON ac.aspirante_id = a.id
+                                WHERE ac.contrato_id = c.id 
+                                AND a.cedula = u.cedula
+                                AND a.empresa_id = :empresa_id
+                            )
+                            AND c.empresa_id = :empresa_id 
+                            AND c.contratante_cedula = :cedula)
+                        )
+                        AND c.archivo_generado IS NOT NULL 
+                        AND c.archivo_generado != ''
+                    ) as total_documentos,
+                    (
+                        SELECT MAX(c.fecha_firma) FROM contratos c 
+                        WHERE (
+                            (c.empleado_cedula = u.cedula 
+                             AND c.empresa_id = :empresa_id 
+                             AND c.contratante_cedula = :cedula)
+                            OR 
+                            (EXISTS (
+                                SELECT 1 FROM aspirante_contratos ac 
+                                INNER JOIN aspirantes a ON ac.aspirante_id = a.id
+                                WHERE ac.contrato_id = c.id 
+                                AND a.cedula = u.cedula
+                                AND a.empresa_id = :empresa_id
+                            )
+                            AND c.empresa_id = :empresa_id 
+                            AND c.contratante_cedula = :cedula)
+                        )
+                    ) as ultimo_contrato_fecha
                     FROM usuarios u
                     INNER JOIN contratos c ON c.empleado_cedula = u.cedula
                     WHERE u.rol = 'empleado'
                     AND c.empresa_id = :empresa_id
                     AND c.contratante_cedula = :cedula
+                    $condicionBusqueda
                     GROUP BY u.cedula, u.nombre, u.estado";
             
             // También incluir empleados que fueron aspirantes contratados de esta empresa
             // aunque no tengan contratos aún, pero solo si el contratante tiene acceso a la empresa
+            // Incluir también el conteo de documentos que llenaron cuando eran aspirantes
             $sql2 = "SELECT DISTINCT u.cedula, u.nombre, u.estado,
-                     0 as total_documentos,
-                     NULL as ultimo_contrato_fecha
+                     (SELECT COUNT(*) FROM contratos c
+                      INNER JOIN aspirante_contratos ac ON ac.contrato_id = c.id
+                      WHERE ac.aspirante_id = a.id
+                      AND c.empresa_id = :empresa_id
+                      AND c.contratante_cedula = :cedula
+                      AND c.archivo_generado IS NOT NULL 
+                      AND c.archivo_generado != '') as total_documentos,
+                     (SELECT MAX(c.fecha_firma) FROM contratos c
+                      INNER JOIN aspirante_contratos ac ON ac.contrato_id = c.id
+                      WHERE ac.aspirante_id = a.id
+                      AND c.empresa_id = :empresa_id
+                      AND c.contratante_cedula = :cedula) as ultimo_contrato_fecha
                      FROM usuarios u
                      INNER JOIN aspirantes a ON a.cedula = u.cedula
                      WHERE u.rol = 'empleado'
@@ -1272,20 +1537,53 @@ class ContratanteController {
                          WHERE c.empleado_cedula = u.cedula 
                          AND c.empresa_id = :empresa_id 
                          AND c.contratante_cedula = :cedula
-                     )";
+                     )
+                     $condicionBusqueda";
             
             // Combinar ambas consultas
-            $sql = "($sql) UNION ($sql2) ORDER BY nombre ASC";
+            $sqlCompleto = "($sql) UNION ($sql2)";
             
-            $stmt = $this->db->prepare($sql);
+            // Contar total de empleados (para paginación)
+            $sqlCount = "SELECT COUNT(*) FROM ($sqlCompleto) as total_empleados";
+            
+            $stmtCount = $this->db->prepare($sqlCount);
+            $stmtCount->bindParam(':empresa_id', $empresaId, PDO::PARAM_INT);
+            $stmtCount->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
+            if (!empty($buscar)) {
+                $buscarParam = '%' . $buscarLimpio . '%';
+                $stmtCount->bindParam(':buscar', $buscarParam);
+            }
+            $stmtCount->execute();
+            $total = $stmtCount->fetchColumn();
+            
+            // Aplicar paginación a la consulta combinada
+            $sqlFinal = "SELECT * FROM ($sqlCompleto) as empleados_union ORDER BY nombre ASC LIMIT :limit OFFSET :offset";
+            
+            $stmt = $this->db->prepare($sqlFinal);
             $stmt->bindParam(':empresa_id', $empresaId, PDO::PARAM_INT);
             $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
+            if (!empty($buscar)) {
+                $buscarParam = '%' . $buscarLimpio . '%';
+                $stmt->bindParam(':buscar', $buscarParam);
+            }
+            $stmt->bindValue(':limit', $porPagina, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
             $stmt->execute();
             
-            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            return [
+                'empleados' => $stmt->fetchAll(PDO::FETCH_ASSOC),
+                'total' => $total,
+                'total_paginas' => ceil($total / $porPagina),
+                'pagina_actual' => $pagina
+            ];
         } catch (PDOException $e) {
             error_log("Error al obtener empleados por empresa: " . $e->getMessage());
-            return [];
+            return [
+                'empleados' => [],
+                'total' => 0,
+                'total_paginas' => 0,
+                'pagina_actual' => 1
+            ];
         }
     }
     
@@ -1296,13 +1594,47 @@ class ContratanteController {
     public function obtenerPerfilEmpleado($empleadoCedula, $empresaId, $contratanteCedula) {
         try {
             // Verificar que el empleado existe y pertenece a la empresa del contratante
-            // También verificar si fue aspirante antes
+            // También verificar si fue aspirante antes y obtener sus datos personales
             // Primero intentar obtener desde contratos
-            $sql = "SELECT DISTINCT u.*, e.nombre as empresa_nombre, a.id as aspirante_id
+            $sql = "SELECT DISTINCT 
+                           u.*, 
+                           e.nombre as empresa_nombre, 
+                           a.id as aspirante_id, a.telefono, a.telefono2, a.correo, a.direccion,
+                           a.created_at as fecha_inscripcion,
+                           CASE 
+                               WHEN a.estado = 'contratado' THEN a.updated_at
+                               ELSE NULL
+                           END as fecha_contratacion,
+                           ed.fecha_nacimiento,
+                           ed.barrio,
+                           ed.localidad,
+                           ed.salario,
+                           ed.subsidio_transporte,
+                           ed.eps,
+                           ed.fondo_pension,
+                           ed.fondo_cesantias,
+                           ed.caja_compensacion,
+                           ed.genero,
+                           ed.rh,
+                           ed.nivel_escolaridad,
+                           ed.nivel_escolaridad_estado,
+                           ed.estado_civil,
+                           ed.computador,
+                           ed.internet,
+                           ed.tiene_hijos,
+                           ed.numero_hijos,
+                           ed.contacto_emergencia_nombre,
+                           ed.contacto_emergencia_parentesco,
+                           ed.contacto_emergencia_telefono,
+                           ed.examenes_medicos,
+                           ed.examenes_fecha,
+                           ed.examenes_resultados_pdf,
+                           ed.observaciones
                     FROM usuarios u
                     INNER JOIN contratos c ON c.empleado_cedula = u.cedula
                     INNER JOIN empresas e ON c.empresa_id = e.id
                     LEFT JOIN aspirantes a ON a.cedula = u.cedula AND a.empresa_id = :empresa_id
+                    LEFT JOIN empleado_datos ed ON ed.aspirante_id = a.id
                     WHERE u.cedula = :cedula
                     AND c.empresa_id = :empresa_id
                     AND c.contratante_cedula = :contratante_cedula
@@ -1318,10 +1650,44 @@ class ContratanteController {
             
             // Si no se encontró desde contratos, intentar desde aspirantes (empleado contratado sin contratos aún)
             if (!$empleado) {
-                $sql = "SELECT DISTINCT u.*, e.nombre as empresa_nombre, a.id as aspirante_id
+                $sql = "SELECT DISTINCT 
+                               u.*, 
+                               e.nombre as empresa_nombre, 
+                               a.id as aspirante_id, a.telefono, a.telefono2, a.correo, a.direccion,
+                               a.created_at as fecha_inscripcion,
+                               CASE 
+                                   WHEN a.estado = 'contratado' THEN a.updated_at
+                                   ELSE NULL
+                               END as fecha_contratacion,
+                               ed.fecha_nacimiento,
+                               ed.barrio,
+                               ed.localidad,
+                               ed.salario,
+                               ed.subsidio_transporte,
+                               ed.eps,
+                               ed.fondo_pension,
+                               ed.fondo_cesantias,
+                               ed.caja_compensacion,
+                               ed.genero,
+                               ed.rh,
+                               ed.nivel_escolaridad,
+                               ed.nivel_escolaridad_estado,
+                               ed.estado_civil,
+                               ed.computador,
+                               ed.internet,
+                               ed.tiene_hijos,
+                               ed.numero_hijos,
+                               ed.contacto_emergencia_nombre,
+                               ed.contacto_emergencia_parentesco,
+                               ed.contacto_emergencia_telefono,
+                               ed.examenes_medicos,
+                               ed.examenes_fecha,
+                               ed.examenes_resultados_pdf,
+                               ed.observaciones
                         FROM usuarios u
                         INNER JOIN aspirantes a ON a.cedula = u.cedula
                         INNER JOIN empresas e ON a.empresa_id = e.id
+                        LEFT JOIN empleado_datos ed ON ed.aspirante_id = a.id
                         WHERE u.cedula = :cedula
                         AND a.empresa_id = :empresa_id
                         AND a.estado = 'contratado'
@@ -1421,6 +1787,51 @@ class ContratanteController {
         } catch (PDOException $e) {
             error_log("Error al obtener perfil del empleado: " . $e->getMessage());
             return null;
+        }
+    }
+    
+    /**
+     * Actualizar datos personales del aspirante/empleado
+     */
+    public function actualizarDatosPersonales($aspiranteId, $datos, $contratanteCedula) {
+        try {
+            // Verificar que el aspirante pertenece al contratante
+            $sql = "SELECT a.id FROM aspirantes a
+                    INNER JOIN contratos c ON c.empresa_id = a.empresa_id
+                    WHERE a.id = :aspirante_id AND c.contratante_cedula = :cedula
+                    LIMIT 1";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindParam(':aspirante_id', $aspiranteId, PDO::PARAM_INT);
+            $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
+            $stmt->execute();
+            
+            if (!$stmt->fetch()) {
+                return ['success' => false, 'error' => 'Aspirante no encontrado o no autorizado'];
+            }
+            
+            // Actualizar datos
+            $sql = "UPDATE aspirantes SET 
+                    telefono = :telefono,
+                    telefono2 = :telefono2,
+                    correo = :correo,
+                    direccion = :direccion
+                    WHERE id = :id";
+            
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':telefono', !empty($datos['telefono']) ? trim($datos['telefono']) : null);
+            $stmt->bindValue(':telefono2', !empty($datos['telefono2']) ? trim($datos['telefono2']) : null);
+            $stmt->bindValue(':correo', !empty($datos['correo']) ? trim($datos['correo']) : null);
+            $stmt->bindValue(':direccion', !empty($datos['direccion']) ? trim($datos['direccion']) : null);
+            $stmt->bindParam(':id', $aspiranteId, PDO::PARAM_INT);
+            
+            if ($stmt->execute()) {
+                return ['success' => true, 'message' => 'Datos actualizados correctamente'];
+            }
+            
+            return ['success' => false, 'error' => 'Error al actualizar los datos'];
+        } catch (PDOException $e) {
+            error_log("Error al actualizar datos personales: " . $e->getMessage());
+            return ['success' => false, 'error' => 'Error al actualizar los datos: ' . $e->getMessage()];
         }
     }
 }

@@ -21,48 +21,74 @@ class ContratanteController {
     public function obtenerEstadisticas($contratanteCedula) {
         try {
             $stats = [
-                'total_contratos' => 0,
-                'contratos_activos' => 0,
-                'contratos_pendientes' => 0,
-                'contratos_mes' => 0
+                'total_empleados' => 0,
+                'total_aspirantes' => 0,
+                'pendientes_examenes' => 0
             ];
-            
-            // Total contratos
-            $sql = "SELECT COUNT(*) FROM contratos WHERE contratante_cedula = :cedula";
+
+            // Empresas a las que el contratante tiene acceso (por contratos)
+            $sqlEmpresas = "SELECT DISTINCT empresa_id FROM contratos WHERE contratante_cedula = :cedula";
+
+            // Total aspirantes (de las empresas del contratante)
+            $sql = "SELECT COUNT(*) 
+                    FROM aspirantes a
+                    WHERE a.empresa_id IN ($sqlEmpresas)";
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmt->execute();
-            $stats['total_contratos'] = $stmt->fetchColumn();
-            
-            // Contratos activos
-            $sql = "SELECT COUNT(*) FROM contratos WHERE contratante_cedula = :cedula AND estado = 'activo'";
+            $stats['total_aspirantes'] = (int)$stmt->fetchColumn();
+
+            // Total empleados (asociados al contratante por contratos o por aspirante contratado en sus empresas)
+            $sql = "SELECT COUNT(*) FROM (
+                        SELECT DISTINCT u.cedula
+                        FROM usuarios u
+                        INNER JOIN contratos c ON c.empleado_cedula = u.cedula
+                        WHERE u.rol = 'empleado' AND c.contratante_cedula = :cedula
+                        UNION
+                        SELECT DISTINCT u.cedula
+                        FROM usuarios u
+                        INNER JOIN aspirantes a ON a.cedula = u.cedula
+                        WHERE u.rol = 'empleado'
+                          AND a.estado = 'contratado'
+                          AND a.empresa_id IN ($sqlEmpresas)
+                    ) t";
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmt->execute();
-            $stats['contratos_activos'] = $stmt->fetchColumn();
-            
-            // Contratos pendientes de datos
-            $sql = "SELECT COUNT(*) FROM contratos WHERE contratante_cedula = :cedula AND datos_completos = 0";
+            $stats['total_empleados'] = (int)$stmt->fetchColumn();
+
+            // Pendientes exámenes médicos (en la base de empleados del contratante)
+            $sql = "SELECT COUNT(*) FROM (
+                        SELECT DISTINCT t.cedula
+                        FROM (
+                            SELECT DISTINCT u.cedula
+                            FROM usuarios u
+                            INNER JOIN contratos c ON c.empleado_cedula = u.cedula
+                            WHERE u.rol = 'empleado' AND c.contratante_cedula = :cedula
+                            UNION
+                            SELECT DISTINCT u.cedula
+                            FROM usuarios u
+                            INNER JOIN aspirantes a ON a.cedula = u.cedula
+                            WHERE u.rol = 'empleado'
+                              AND a.estado = 'contratado'
+                              AND a.empresa_id IN ($sqlEmpresas)
+                        ) t
+                        LEFT JOIN empleado_datos ed ON ed.cedula = t.cedula
+                        WHERE COALESCE(ed.examenes_medicos, 0) <> 1
+                           OR ed.examenes_fecha IS NULL
+                    ) pendientes";
             $stmt = $this->db->prepare($sql);
             $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
             $stmt->execute();
-            $stats['contratos_pendientes'] = $stmt->fetchColumn();
-            
-            // Contratos este mes
-            $sql = "SELECT COUNT(*) FROM contratos WHERE contratante_cedula = :cedula AND MONTH(created_at) = MONTH(NOW()) AND YEAR(created_at) = YEAR(NOW())";
-            $stmt = $this->db->prepare($sql);
-            $stmt->bindParam(':cedula', $contratanteCedula, PDO::PARAM_INT);
-            $stmt->execute();
-            $stats['contratos_mes'] = $stmt->fetchColumn();
+            $stats['pendientes_examenes'] = (int)$stmt->fetchColumn();
             
             return $stats;
         } catch (PDOException $e) {
             error_log("Error al obtener estadísticas: " . $e->getMessage());
             return [
-                'total_contratos' => 0,
-                'contratos_activos' => 0,
-                'contratos_pendientes' => 0,
-                'contratos_mes' => 0
+                'total_empleados' => 0,
+                'total_aspirantes' => 0,
+                'pendientes_examenes' => 0
             ];
         }
     }
@@ -1460,6 +1486,9 @@ class ContratanteController {
             // Primero, obtener empleados que tienen contratos (con o sin archivo_generado)
             // Incluir también documentos que llenaron cuando eran aspirantes
             $sql = "SELECT DISTINCT u.cedula, u.nombre, u.estado,
+                    ed.examenes_medicos,
+                    ed.examenes_fecha,
+                    ed.examenes_resultados_pdf,
                     (
                         SELECT COUNT(DISTINCT c.id) FROM contratos c 
                         WHERE (
@@ -1500,16 +1529,20 @@ class ContratanteController {
                     ) as ultimo_contrato_fecha
                     FROM usuarios u
                     INNER JOIN contratos c ON c.empleado_cedula = u.cedula
+                    LEFT JOIN empleado_datos ed ON ed.cedula = u.cedula
                     WHERE u.rol = 'empleado'
                     AND c.empresa_id = :empresa_id
                     AND c.contratante_cedula = :cedula
                     $condicionBusqueda
-                    GROUP BY u.cedula, u.nombre, u.estado";
+                    GROUP BY u.cedula, u.nombre, u.estado, ed.examenes_medicos, ed.examenes_fecha, ed.examenes_resultados_pdf";
             
             // También incluir empleados que fueron aspirantes contratados de esta empresa
             // aunque no tengan contratos aún, pero solo si el contratante tiene acceso a la empresa
             // Incluir también el conteo de documentos que llenaron cuando eran aspirantes
             $sql2 = "SELECT DISTINCT u.cedula, u.nombre, u.estado,
+                     ed.examenes_medicos,
+                     ed.examenes_fecha,
+                     ed.examenes_resultados_pdf,
                      (SELECT COUNT(*) FROM contratos c
                       INNER JOIN aspirante_contratos ac ON ac.contrato_id = c.id
                       WHERE ac.aspirante_id = a.id
@@ -1524,6 +1557,7 @@ class ContratanteController {
                       AND c.contratante_cedula = :cedula) as ultimo_contrato_fecha
                      FROM usuarios u
                      INNER JOIN aspirantes a ON a.cedula = u.cedula
+                     LEFT JOIN empleado_datos ed ON ed.cedula = u.cedula
                      WHERE u.rol = 'empleado'
                      AND a.empresa_id = :empresa_id
                      AND a.estado = 'contratado'

@@ -119,6 +119,79 @@
                 </div>
             <?php else: ?>
                 <!-- Lista de Empleados de la Empresa -->
+                <?php
+                // ==========================
+                // Notificaciones de exámenes médicos
+                // Reglas:
+                // - Pendiente: examenes_medicos != 1 o no hay examenes_fecha
+                // - Renovación anual: examenes_fecha + 1 año
+                // - Notificar: 5 días antes, 2 días antes y el día exacto (0)
+                // - Extra: si está vencido, avisar como "Vencido"
+                // ==========================
+                $notificaciones_examenes = [];
+                $hoy = new DateTime('today');
+
+                foreach (($empleados ?? []) as $emp) {
+                    $ced = $emp['cedula'] ?? null;
+                    $nombreEmp = $emp['nombre'] ?? 'Empleado';
+                    $examenesMed = isset($emp['examenes_medicos']) ? (int)$emp['examenes_medicos'] : 0;
+                    $fechaExamenStr = $emp['examenes_fecha'] ?? null;
+
+                    $linkPerfil = 'index.php?' . http_build_query([
+                        'action' => 'contratante_perfil_empleado',
+                        'empleado_cedula' => $ced,
+                        'empresa_id' => $empresa_seleccionada['id']
+                    ]);
+
+                    // Pendiente si no marcó exámenes o no hay fecha
+                    if ($examenesMed !== 1 || empty($fechaExamenStr)) {
+                        $notificaciones_examenes[] = [
+                            'tipo' => 'pendiente',
+                            'titulo' => $nombreEmp . ' (' . $ced . ')',
+                            'mensaje' => 'Pendiente por exámenes médicos (sin fecha registrada).',
+                            'link' => $linkPerfil
+                        ];
+                        continue;
+                    }
+
+                    // Recordatorios por renovación anual
+                    try {
+                        $fechaExamen = new DateTime($fechaExamenStr);
+                        $vencimiento = (clone $fechaExamen)->modify('+1 year');
+                        $vencimiento->setTime(0, 0, 0);
+
+                        $diffDays = (int)$hoy->diff($vencimiento)->format('%r%a'); // negativo si vencido
+
+                        if (in_array($diffDays, [5, 2, 0], true)) {
+                            $label = $diffDays === 0 ? 'Hoy vence' : "Vence en {$diffDays} días";
+                            $notificaciones_examenes[] = [
+                                'tipo' => 'recordatorio',
+                                'titulo' => $nombreEmp . ' (' . $ced . ')',
+                                'mensaje' => $label . ' la vigencia anual de exámenes (' . $vencimiento->format('d/m/Y') . ').',
+                                'link' => $linkPerfil
+                            ];
+                        } elseif ($diffDays < 0) {
+                            $notificaciones_examenes[] = [
+                                'tipo' => 'vencido',
+                                'titulo' => $nombreEmp . ' (' . $ced . ')',
+                                'mensaje' => 'Exámenes vencidos desde ' . $vencimiento->format('d/m/Y') . ' (renovación anual).',
+                                'link' => $linkPerfil
+                            ];
+                        }
+                    } catch (Exception $e) {
+                        // Si la fecha viene mal formada, marcar como pendiente para revisión
+                        $notificaciones_examenes[] = [
+                            'tipo' => 'pendiente',
+                            'titulo' => $nombreEmp . ' (' . $ced . ')',
+                            'mensaje' => 'Pendiente: fecha de exámenes inválida, requiere corrección.',
+                            'link' => $linkPerfil
+                        ];
+                    }
+                }
+
+                $total_notificaciones_examenes = count($notificaciones_examenes);
+                ?>
+
                 <div class="mb-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
@@ -126,6 +199,58 @@
                             <p class="text-muted mb-0">Total: <?php echo $total_empleados ?? count($empleados); ?> empleado(s)</p>
                         </div>
                         <div class="d-flex gap-2">
+                            <!-- Campanita de notificaciones (exámenes médicos) -->
+                            <div class="dropdown">
+                                <button class="btn btn-outline-warning position-relative dropdown-toggle"
+                                        type="button"
+                                        data-bs-toggle="dropdown"
+                                        aria-expanded="false"
+                                        title="Notificaciones de exámenes médicos">
+                                    <i class="bi bi-bell"></i>
+                                    <?php if ($total_notificaciones_examenes > 0): ?>
+                                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                                            <?php echo (int)$total_notificaciones_examenes; ?>
+                                            <span class="visually-hidden">notificaciones</span>
+                                        </span>
+                                    <?php endif; ?>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end" style="min-width: 380px; max-width: 520px;">
+                                    <li class="dropdown-header">
+                                        Exámenes médicos (<?php echo (int)$total_notificaciones_examenes; ?>)
+                                    </li>
+                                    <?php if ($total_notificaciones_examenes === 0): ?>
+                                        <li>
+                                            <span class="dropdown-item-text text-muted">
+                                                No hay notificaciones por ahora.
+                                            </span>
+                                        </li>
+                                    <?php else: ?>
+                                        <?php foreach ($notificaciones_examenes as $n): ?>
+                                            <?php
+                                            $icon = 'bi-info-circle';
+                                            $textClass = 'text-body';
+                                            if (($n['tipo'] ?? '') === 'pendiente') { $icon = 'bi-exclamation-triangle'; $textClass = 'text-danger'; }
+                                            if (($n['tipo'] ?? '') === 'recordatorio') { $icon = 'bi-clock-history'; $textClass = 'text-warning'; }
+                                            if (($n['tipo'] ?? '') === 'vencido') { $icon = 'bi-x-octagon'; $textClass = 'text-danger'; }
+                                            ?>
+                                            <li>
+                                                <a class="dropdown-item" href="<?php echo htmlspecialchars($n['link']); ?>">
+                                                    <div class="d-flex gap-2">
+                                                        <div class="<?php echo $textClass; ?>">
+                                                            <i class="bi <?php echo $icon; ?>"></i>
+                                                        </div>
+                                                        <div class="flex-grow-1">
+                                                            <div class="fw-semibold"><?php echo htmlspecialchars($n['titulo']); ?></div>
+                                                            <div class="small text-muted"><?php echo htmlspecialchars($n['mensaje']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                </a>
+                                            </li>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </ul>
+                            </div>
+
                             <a href="index.php?action=contratante_documentos_empleados&empresa_id=<?php echo $empresa_seleccionada['id']; ?>" 
                                class="btn btn-primary">
                                 <i class="bi bi-file-earmark-text me-2"></i>Documentos

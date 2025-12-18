@@ -24,43 +24,33 @@
             
             <!-- Estadísticas -->
             <div class="row g-4 mb-4">
-                <div class="col-md-6 col-lg-3">
-                    <div class="stat-card">
-                        <div class="icon-box bg-primary">
-                            <i class="bi bi-file-earmark-text"></i>
-                        </div>
-                        <div class="stat-number"><?php echo $estadisticas['total_contratos'] ?? 0; ?></div>
-                        <div class="stat-label">Contratos Creados</div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
-                    <div class="stat-card">
-                        <div class="icon-box bg-success">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div class="stat-number"><?php echo $estadisticas['contratos_activos'] ?? 0; ?></div>
-                        <div class="stat-label">Contratos Activos</div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
-                    <div class="stat-card">
-                        <div class="icon-box bg-warning">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div class="stat-number"><?php echo $estadisticas['contratos_pendientes'] ?? 0; ?></div>
-                        <div class="stat-label">Pendientes de Datos</div>
-                    </div>
-                </div>
-                
-                <div class="col-md-6 col-lg-3">
+                <div class="col-md-6 col-lg-4">
                     <div class="stat-card">
                         <div class="icon-box bg-info">
-                            <i class="bi bi-calendar-check"></i>
+                            <i class="bi bi-people"></i>
                         </div>
-                        <div class="stat-number"><?php echo $estadisticas['contratos_mes'] ?? 0; ?></div>
-                        <div class="stat-label">Este Mes</div>
+                        <div class="stat-number"><?php echo (int)($estadisticas['total_empleados'] ?? 0); ?></div>
+                        <div class="stat-label">Empleados</div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="stat-card">
+                        <div class="icon-box bg-success">
+                            <i class="bi bi-person-plus"></i>
+                        </div>
+                        <div class="stat-number"><?php echo (int)($estadisticas['total_aspirantes'] ?? 0); ?></div>
+                        <div class="stat-label">Aspirantes</div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6 col-lg-4">
+                    <div class="stat-card">
+                        <div class="icon-box bg-warning">
+                            <i class="bi bi-bell"></i>
+                        </div>
+                        <div class="stat-number"><?php echo (int)($estadisticas['pendientes_examenes'] ?? 0); ?></div>
+                        <div class="stat-label">Pendientes Exámenes Médicos</div>
                     </div>
                 </div>
             </div>
